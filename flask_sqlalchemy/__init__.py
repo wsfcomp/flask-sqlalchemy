@@ -26,7 +26,7 @@ from sqlalchemy.orm.exc import UnmappedClassError
 from sqlalchemy.orm.session import Session
 from sqlalchemy.event import listen
 from sqlalchemy.engine.url import make_url
-from sqlalchemy.ext.declarative import declarative_base, DeclarativeMeta
+from sqlalchemy.ext.declarative import declarative_base as sqlalchemy_declarative_base, DeclarativeMeta
 from flask.ext.sqlalchemy._compat import iteritems, itervalues, xrange, \
      string_types
 
@@ -541,6 +541,10 @@ class Model(object):
     query = None
 
 
+def declarative_base(cls=Model, name='Model', metaclass=_BoundDeclarativeMeta):
+    return sqlalchemy_declarative_base(cls=cls, name=name, metaclass=metaclass)
+
+
 class SQLAlchemy(object):
     """This class is used to control the SQLAlchemy integration to one
     or more Flask applications.  Depending on how you initialize the
@@ -639,6 +643,7 @@ class SQLAlchemy(object):
             'scopefunc', connection_stack.__ident_func__
         )
 
+        self._bases = set()
         self.session = self.create_scoped_session(session_options)
         self.Model = self.make_declarative_base()
         self._engine_lock = Lock()
@@ -657,7 +662,7 @@ class SQLAlchemy(object):
     @property
     def metadata(self):
         """Returns the metadata"""
-        return self.Model.metadata
+        return [m.metadata for m in self._bases]
 
     def create_scoped_session(self, options=None):
         """Helper factory method that creates a scoped session."""
@@ -670,10 +675,14 @@ class SQLAlchemy(object):
 
     def make_declarative_base(self):
         """Creates the declarative base."""
-        base = declarative_base(cls=Model, name='Model',
-                                metaclass=_BoundDeclarativeMeta)
-        base.query = _QueryProperty(self)
+        base = declarative_base()
+        self.register_declarative_base(base)
         return base
+
+    def register_declarative_base(self, base):
+        if base not in self.bases:
+            base.query = _QueryProperty(self)
+            self.bases.add(base)
 
     def init_app(self, app):
         """This callback can be used to initialize an application for the
